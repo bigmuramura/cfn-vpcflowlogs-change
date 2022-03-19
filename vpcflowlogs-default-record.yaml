@@ -1,0 +1,85 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: VPC Flow Logs
+
+Parameters:
+  ProjectName:
+    Description: Project Name
+    Type: String
+    Default: unnamed
+  Environment:
+    Description: Environment
+    Type: String
+    Default: dev
+    AllowedValues:
+      - prod
+      - dev
+      - stg
+  VpcId:
+    Description: VPC ID
+    Type: AWS::EC2::VPC::Id
+  Filter:
+    Type: String
+    Default: ALL
+    AllowedValues: [ALL, ACCEPT, REJECT]
+  S3BucketName:
+    Description: Type the name of S3 Bucket for VPC Flow Logs
+    Type: String
+
+Resources:
+  # ------------------------------------------------------------#
+  # S3 Bucket for VPC Flow Logs
+  # ------------------------------------------------------------#
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      # BucketName: !Sub ${ProjectName}-${Environment}-${S3BucketName}-${AWS::AccountId}
+      BucketName: !Sub ${ProjectName}-${Environment}-${S3BucketName}
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: "BucketOwnerEnforced"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: "AES256"
+            BucketKeyEnabled: false
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleMultipartUpload
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+            Status: "Enabled"
+          - Id: CurrentVersionExpiration
+            ExpirationInDays: 90
+            Status: "Enabled"
+          - Id: NoncurrentVersionExpiration
+            NoncurrentVersionExpiration:
+              # NewerNoncurrentVersions: 1
+              NoncurrentDays: 30
+            Status: "Enabled"
+
+  # ------------------------------------------------------------#
+  # VPC Flow Logs
+  # ------------------------------------------------------------#
+  VPCFlowLogs:
+    Type: "AWS::EC2::FlowLog"
+    Properties:
+      LogDestinationType: s3
+      LogDestination: !GetAtt S3Bucket.Arn
+      ResourceType: "VPC"
+      ResourceId: !Ref VpcId
+      TrafficType: !Ref Filter
+      DestinationOptions:
+        {
+          "FileFormat": "parquet",
+          "HiveCompatiblePartitions": true,
+          "PerHourPartition": true,
+        }
